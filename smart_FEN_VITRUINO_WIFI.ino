@@ -133,7 +133,7 @@ void preSetupChipId() {
  time_top = String(chipId)+"/"+     "fen_time";       time_topic= time_top.c_str();
  switch1_top = String(chipId)+"/"+  "fen_vkl";        switch1_topic= switch1_top.c_str();
  switch11_top = String(chipId)+"/"+ "fen_vkl1";       switch11_topic= switch11_top.c_str();
- edit1_top = String(chipId)+"/"+ "  fen_edit1";       edit1_topic= edit1_top.c_str(); 
+ edit1_top = String(chipId)+"/"+ "fen_edit1";         edit1_topic= edit1_top.c_str(); 
  edit11_top = String(chipId)+"/"+  "fen_edit11";      edit11_topic= edit11_top.c_str();
 
   
@@ -269,7 +269,7 @@ void loop() {   client.loop(); timeClient.update();
   if (WiFi.status() == 3)  { tft.drawCircle(30, 100, 8, TFT_BLUE );tft.fillCircle(30, 100, 7, TFT_GREENYELLOW); }
    else {tft.drawCircle(30, 100, 8, TFT_BLUE );tft.fillCircle(30, 100, 7, TFT_BLACK);}
  
- if (tmr2.tick()) {EEPROM.put(100,edit1); EEPROM.put(110,switch1); EEPROM.commit(); }
+ //if (tmr2.tick()) {EEPROM.put(100,edit1); EEPROM.put(110,switch1); EEPROM.commit(); }
  
  //=========================================================================================================================================== 
  if (tmr8.tick()) { x3=1;tft.setCursor(120, 170);tft.setTextSize(2);tft.setTextColor(TFT_NAVY, TFT_BLACK); tft.print("         ");
@@ -402,9 +402,10 @@ if (tmr3.tick()) {digitalWrite(33, HIGH); digitalWrite(27, HIGH);}
       for (int i = 0; i < length; i++) incommingMessage+=(char)payload[i]; Serial.println("Message arrived ["+String(topic)+"]"+incommingMessage);
     
      if( strcmp(topic,switch1_topic) == 0){ if (incommingMessage.equals("333")) {switch1=1;switch12=333; } 
-        else { if (incommingMessage.equals("0")){switch1=0;switch12=0; }}  }  //  включаем нагрев
+        else { if (incommingMessage.equals("0")){switch1=0;switch12=0; }} EEPROM.put(110,switch1); EEPROM.commit(); }  //  включаем нагрев
+        
      //if( strcmp(topic,switch1_topic) == 0){ switch1=incommingMessage.toInt();incommingMessage = "";  }
-     if (strcmp(topic,edit1_topic) == 0) {edit1 = incommingMessage.toInt();incommingMessage = "";}
+     if (strcmp(topic,edit1_topic) == 0) {edit1 = incommingMessage.toInt(); EEPROM.put(100,edit1);EEPROM.commit();incommingMessage = "";}
 
   //Serial.print("switch1 =  "); Serial.println(switch1);
   //Serial.print("edit1 =  "); Serial.println(edit1);
