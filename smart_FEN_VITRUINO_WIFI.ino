@@ -1,6 +1,6 @@
 //  ядро ЕСП32 2.017
 #include <AutoOTA.h>
-AutoOTA ota("1.1", "eu1abg/Smart_Fen"); // eu1abg/Webasto_virtuino   https://github.com/eu1abg/Smart_Fen
+AutoOTA ota("2.0", "eu1abg/Smart_Fen"); // eu1abg/Webasto_virtuino   https://github.com/eu1abg/Smart_Fen
 
  #include <WiFi.h>
  
@@ -101,27 +101,64 @@ unsigned long lastMsg = 0;
 //======================================================================
 bool switch1 = 0; int switch12 = 0; int edit1; char buffer[100]; bool portal=0;
 
-//-----------------------------------------------------------------------------------------------------------------
-String incommingMessage="";
-const char* vent_topic = "fen_vent";   
-const char* tb_topic = "fen_tempb";     
-const char* t_topic = "fen_temp";                              
-const char*  h_topic="fen_hum";                              
-const char* co2_topic = "fen_co2";                          
-const char* co_topic = "fen_co";                             
-const char* p_topic = "fen_p";                               
-const char* tust_topic = "fen_tust";  
-const char* time_topic = "fen_time";                        
-//-----------------------------------------------------------------------------------------------------------------
-const char* switch1_topic="fen_vkl"; const char* switch11_topic="fen_vkl1";
-const char* edit1_topic="fen_edit1"; const char* edit11_topic="fen_edit11";
+//--------------------------------ТОПИКИ и АйДи -----------------------------------------------------------------------------------------------------
+String incommingMessage="";  uint32_t chipId = 0; 
+String vent_top;             const char* vent_topic; 
+String tb_top;               const char* tb_topic; 
+String t_top;                const char* t_topic;                        
+String  h_top;               const char*  h_topic;                         
+String co2_top;              const char* co2_topic;                    
+String co_top;               const char* co_topic;                      
+String p_top;               const char* p_topic;                     
+String tust_top;             const char* tust_topic;
+String time_top;             const char* time_topic;
+String switch1_top;          const char* switch1_topic; 
+String switch11_top;         const char* switch11_topic;
+String edit1_top;            const char* edit1_topic; 
+String edit11_top;           const char* edit11_topic;
 
 
+void preSetupChipId() {
+  uint64_t mac = ESP.getEfuseMac();
+  chipId = (uint32_t)(mac >> 24);  // Берем 4 байта MAC-адреса
+
+ vent_top = String(chipId)+"/"+"fen_vent";            vent_topic= vent_top.c_str();  
+ tb_top = String(chipId)+"/"+ "fen_tempb";            tb_topic= tb_top.c_str();
+ t_top = String(chipId)+"/"+  "fen_temp";             t_topic= t_top.c_str();                       
+  h_top = String(chipId)+"/"+ "fen_hum";              h_topic= h_top.c_str();                      
+ co2_top = String(chipId)+"/"+ "fen_co2";             co2_topic= co2_top.c_str();                  
+ co_top = String(chipId)+"/"+ "fen_co";               co_topic= co_top.c_str();                   
+ p_top = String(chipId)+"/"+   "fen_p";               p_topic=  p_top.c_str();                 
+ tust_top = String(chipId)+"/"+  "fen_tust";          tust_topic= tust_top.c_str(); 
+ time_top = String(chipId)+"/"+     "fen_time";       time_topic= time_top.c_str();
+ switch1_top = String(chipId)+"/"+  "fen_vkl";        switch1_topic= switch1_top.c_str();
+ switch11_top = String(chipId)+"/"+ "fen_vkl1";       switch11_topic= switch11_top.c_str();
+ edit1_top = String(chipId)+"/"+ "  fen_edit1";       edit1_topic= edit1_top.c_str(); 
+ edit11_top = String(chipId)+"/"+  "fen_edit11";      edit11_topic= edit11_top.c_str();
+
+  
+
+
+// //-----------------------------------------------------------------------------------------------------------------
+// String incommingMessage="";
+// const char* vent_topic = "fen_vent";   
+// const char* tb_topic = "fen_tempb";     
+// const char* t_topic = "fen_temp";                              
+// const char*  h_topic="fen_hum";                              
+// const char* co2_topic = "fen_co2";                          
+// const char* co_topic = "fen_co";                             
+// const char* p_topic = "fen_p";                               
+// const char* tust_topic = "fen_tust";  
+// const char* time_topic = "fen_time";                        
+// //-----------------------------------------------------------------------------------------------------------------
+// const char* switch1_topic="fen_vkl"; const char* switch11_topic="fen_vkl1";
+// const char* edit1_topic="fen_edit1"; const char* edit11_topic="fen_edit11";
+
+}
 
 //==============================================================================================================================
-//#include <Watchdog.h>
-//Watchdog wdt(18000);
-
+               void __attribute__((constructor)) beforeSetup() {preSetupChipId();}
+//==============================================================================================================================
 void setup() { 
   Serial.begin(115200); EEPROM.begin(500);
   //==============================================================================================================================
