@@ -1,16 +1,16 @@
 {
-  "name": "Смарт ФЕН",
+  "name": "Smart Fen",
   "about": "Очень нужно",
-  "version": "2.02",
-  "notes": "Дополнения",
+  "version": "3.01",
+  "notes": "Улучшения",
   "builds": [
     {
       "chipFamily": "ESP32",
       "parts": [
-        {
-          "path": "https://raw.githubusercontent.com/eu1abg/Smart_Fen/main/bin/smart_FEN_VITRUINO_WIFI.ino.bin",
+        { "path": "https://raw.githubusercontent.com/eu1abg/Smart_Fen/main/bin/firmware.bin",
           "offset": 0
         }
+        
       ]
     }
   ]
