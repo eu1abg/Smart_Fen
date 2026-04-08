@@ -1,20 +1,38 @@
-//  ядро ЕСП32 2.017
-#include <AutoOTA.h>
-AutoOTA ota("2.0", "eu1abg/Smart_Fen"); // eu1abg/Webasto_virtuino   https://github.com/eu1abg/Smart_Fen
-
+#include <ArduinoJson.h>
+#include <AvtoFotaNew.h>
+const char* MANIFEST_URL = "https://raw.githubusercontent.com/eu1abg/Smart_Fen/main/firmware/firmware.json";
+AvtoFotaNew fota("5.00");
+//bool otaStarted = false;
  #include <WiFi.h>
- 
- #include <TFT_eSPI.h>
- TFT_eSPI tft = TFT_eSPI();
- 
+//=========================================================================================
 
+#define ST7789_DRIVER 
+#define TFT_RGB_ORDER TFT_BGR
+#define TFT_WIDTH  240
+#define TFT_HEIGHT 320
+#define TFT_INVERSION_ON
+#define TFT_MOSI 23
+#define TFT_SCLK 18
+#define TFT_CS   15
+#define TFT_DC   2
+#define TFT_RST  4
+#define LOAD_GLCD
+#define SPI_FREQUENCY  27000000
+#define SPI_READ_FREQUENCY  20000000
+#define SPI_TOUCH_FREQUENCY  2500000
+
+ #include <TFT_eSPI.h>
+ #include <SPI.h>
+TFT_eSPI tft = TFT_eSPI();
+//==========================================================================================
 #include <SimplePortal.h>
 #include <EEPROM.h>
 //==================================================================
 #include <PubSubClient.h>
 #include <WiFiClient.h>
 //=========================================================================================================================================== 
-
+//#include "esp_task_wdt.h"
+#define WDT_TIMEOUT 24 // часа
 //===========================================================================================================================================
  #include <NTPClient_Generic.h>          // https://github.com/khoih-prog/NTPClient_Generic
 #include <WiFiUdp.h>
@@ -30,8 +48,8 @@ DS18B20 sensor1(26); // температура батареи
 GyverBME280 bme;       
 
 //=========================================================================================================================================== 
-#include "GyverRelay.h"
-GyverRelay regulator(REVERSE);
+//#include "GyverRelay.h"
+//GyverRelay regulator(REVERSE);
 //=========================================================================================================================================== 
 
 #define BTN_PIN 32       // кнопка подключена сюда (BTN_PIN --- КНОПКА --- GND)
@@ -43,16 +61,22 @@ GButton butt1(BTN_PIN);
 TimerMs tmr1(3000, 1, 0);   // отправляем топики и делаем измерения
 TimerMs tmr2(30000, 1, 0);   // запись
 TimerMs tmr3(1500, 0, 1);
-TimerMs tmr4(60000, 1, 0);   // дубль ;
+TimerMs tmr4(60000, 0, 1);   // дубль ;
 TimerMs tmr5(1000, 1, 0); 
 TimerMs tmr6(500, 0, 1);
 TimerMs tmr7(5000, 1, 0);   // делаем измерения CO2 co
 TimerMs tmr8(15000, 0, 1);   // прогрев СО
 TimerMs tmr9(15000, 1, 0);   //  возвр экр
 TimerMs tmr10(7000, 0, 1); // переключ экр
-TimerMs tmr11(300000, 1, 0); //  переподкл вайфай
-TimerMs tmr12(86400000, 1, 0); // вочдог
-TimerMs tmr13(60000, 1, 0); // обновление
+TimerMs tmr11(180000, 1, 0); //  переподкл вайфай
+TimerMs tmr12(2000, 1, 0); // измеряем батарею
+
+TimerMs tmr13(300000, 1, 0); // обновление
+TimerMs tmr14(1500, 1, 0); //читаем температуру комнаты
+TimerMs tmr15(2500, 1, 0); //читаем влажность комнаты
+TimerMs tmr16(3000, 1, 0); //читаем давление комнаты
+TimerMs tmr17(1000, 1, 0); // вывод инфы
+TimerMs tmr18(WDT_TIMEOUT*3600*1000, 0, 1);; // вочдог
 //=====================================================
 #include <MQUnifiedsensor.h>
 
@@ -69,7 +93,7 @@ MQUnifiedsensor MQ7("esp-32", 3.3, 12, 34, "MQ-7");
 MQUnifiedsensor MQ135("esp-32", 3.3, 12, 35, "MQ-135");
 //=========================================================
 #include "GyverPID.h"
-GyverPID regulator1(5, 2, 1);  // регулятор охлаждения коэф. П, коэф. И, коэф. Д, период дискретизации dt (мс)
+GyverPID regulator1(3, 1, 0.5);  // регулятор охлаждения коэф. П, коэф. И, коэф. Д, период дискретизации dt (мс)
 //=========================================================
 
 // const char* ssid = "EPSminsk.by";
@@ -77,45 +101,69 @@ GyverPID regulator1(5, 2, 1);  // регулятор охлаждения коэ
 
 const char* mqtt_server = "m6.wqtt.ru"; // replace with your broker url
 const char* mqtt_username = "u_XBRH9C";  // you don't need the username and password for public connection
-const char* mqtt_password = "lOzEXIn0";
-const int mqtt_port = 14516;
+ const char* mqtt_password = "lOzEXIn0";
+ const int mqtt_port = 14516;
 
 
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 //==============================================================================================================================
-unsigned long lastMsg = 0;
+ unsigned long lastMsg = 0;
 
 
 
- int tonePin = 14; 
- int gist;   // гистерезис нагрева
- //int tust; // температура нагрева
- float h; float t; bool on=0; int p;
- uint32_t sec; uint32_t timer; uint32_t minutes; uint32_t seconds; uint32_t hours; unsigned long startTime = 0;
- unsigned long currentTime = 0;
- int flag=0; String str; String str1; String fen_time; float tb=0;
-  bool x; bool x1=0; bool x2=0; bool x3=0; int pvrem=0; int x4=0; int x5=0;  uint32_t timerwifi; int x6=0; bool vent;
-  float co;float co2; float vs;unsigned long millis_int1=0; int ekr = 0; 
+  int tonePin = 14; 
+  //int gist;   // гистерезис нагрева
+ // Меняются в прерывании кнопки
+volatile bool portal = 0;        // меняется в myIsr() через butt1
+
+// Меняются в MQTT callback
+volatile int edit1 = 0;          // меняется в callback()
+volatile bool switch1 = 0;       // меняется в callback()
+volatile int switch12 = 0;       // меняется в callback()
+
+// Флаги между задачами (Core0 <-> Core1)
+volatile bool otaStarted = false;  // читается в Task0, меняется в Task1
+volatile bool ekr1 = 0;            // флаг для обновления экрана
+
+// Сигналы от датчиков (если читаешь в одной задаче, а используешь в другой)
+volatile float co = 0;             // читается в Task1
+volatile float co2 = 0;            // читается в Task1
+volatile float t = 0;              // читается в Task1
+volatile float h = 0;              // читается в Task1
+volatile float p = 0;              // читается в Task1
+volatile float tb = 0;             // читается в Task1
+
+// Таймеры и флаги
+volatile bool x3 = 0;              // флаг прогрева CO
+volatile bool vent = 0;            // состояние вентилятора
+
+
+ uint32_t sec, timer, minutes, seconds, hours,timerwifi,timercikl;  
+ unsigned long startTime = 0, currentTime = 0;
+ String str, str1, fen_time; 
+ bool x, x1=0, x2=0,on=0,tx,tmw;
+ float vs,dT=0; unsigned long millis_int1=0; 
 //======================================================================
-bool switch1 = 0; int switch12 = 0; int edit1; char buffer[100]; bool portal=0;
-
+ int n=0,flag=0,x6=0,x4=0, x5=0, ekr = 0; 
+ char buffer[100];
+ 
 //--------------------------------ТОПИКИ и АйДи -----------------------------------------------------------------------------------------------------
-String incommingMessage="";  uint32_t chipId = 0; 
-String vent_top;             const char* vent_topic; 
-String tb_top;               const char* tb_topic; 
-String t_top;                const char* t_topic;                        
-String  h_top;               const char*  h_topic;                         
-String co2_top;              const char* co2_topic;                    
-String co_top;               const char* co_topic;                      
-String p_top;               const char* p_topic;                     
-String tust_top;             const char* tust_topic;
-String time_top;             const char* time_topic;
-String switch1_top;          const char* switch1_topic; 
-String switch11_top;         const char* switch11_topic;
-String edit1_top;            const char* edit1_topic; 
-String edit11_top;           const char* edit11_topic;
+ String incommingMessage="";   uint32_t chipId = 0; 
+ String vent_top;              const char* vent_topic; 
+ String tb_top;                const char* tb_topic; 
+ String t_top;                 const char* t_topic;                        
+ String  h_top;                const char*  h_topic;                         
+ String co2_top;               const char* co2_topic;                    
+ String co_top;                const char* co_topic;                      
+String p_top;                const char* p_topic;                     
+ String tust_top;             const char* tust_topic;
+ String time_top;              const char* time_topic;
+ String switch1_top;           const char* switch1_topic; 
+String switch11_top;          const char* switch11_topic;
+ String edit1_top;             const char* edit1_topic; 
+ String edit11_top;            const char* edit11_topic;
 
 
 void preSetupChipId() {
@@ -157,25 +205,214 @@ void preSetupChipId() {
 }
 
 //==============================================================================================================================
-               void __attribute__((constructor)) beforeSetup() {preSetupChipId();}
+void __attribute__((constructor)) beforeSetup() {preSetupChipId();}
+
+ 
+ //======================= ВНЕШНЕЕ ПРЕРЫВАНИЕ апаратное по 32 ноге ================================================
+
+IRAM_ATTR void myIsr() {butt1.tick();} 
+//==========================================================================================================================
+TaskHandle_t TaskOnCore0;
+TaskHandle_t TaskOnCore1;
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// --- Задача для первого ядра (Core 0) ---
+void Task0Code(void *pvParameters) {for (;;) { 
+client.loop(); timeClient.update();
+if (!client.connected()) reconnect();
+
+
+if (tmr1.tick() && otaStarted==0) {
+
+ publishMessage(vent_topic,String(vent),true); 
+ publishMessage(tb_topic,String(tb),true); 
+ publishMessage(t_topic,String(t),true);    
+ publishMessage(h_topic,String(h),true);
+ publishMessage(co2_topic,String(co2),true);
+ publishMessage(co_topic,String(co),true);
+ publishMessage(p_topic,String(p),true);
+ publishMessage(tust_topic,String(edit1),true);
+ publishMessage(time_topic,fen_time.c_str(),true); 
+ publishMessage(switch11_topic,String(switch12),true);
+ publishMessage(edit11_topic,String(edit1),true);
+
+} 
+
+ vTaskDelay(100 / portTICK_PERIOD_MS); // Правильная задержка в RTOS
+
+
+  }}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// --- Задача для второго ядра (Core 1) ---
+
+
+void Task1Code(void *pvParameters) {for (;;) {
+
+  if (otaStarted) {vTaskDelay(pdMS_TO_TICKS(100));  // отдыхаем, пока идет OTA
+      continue;  // пропускаем всю остальную логику
+    }
+//=========================================================================================================================================== 
+if (tmr8.tick()) { 
+ // Serial.println("делаем прробел......... ");
+  x3=1; tft.setCursor(120, 170);tft.setTextSize(2);tft.setTextColor(TFT_NAVY, TFT_BLACK); tft.print("         ");}
+
+//esp_task_wdt_reset();
+ if(x3==0) { tft.setCursor(120, 170);tft.setTextSize(2);tft.setTextColor(TFT_NAVY, TFT_GREEN); tft.print(" Init СО "); co=0;co2=0; }
+// Serial.println("проверяем СО......... ");
+ if(co > 35 && x3==1) { switch1 = 0;
+     if (tmr5.tick()) { tft.setCursor(120, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_RED);   tft.print("Угар.газ!");tone(tonePin, 1000, 500);tmr6.start();} 
+     if (tmr6.tick()) { tft.setCursor(120, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print("         ");}
+    } 
+  if(co < 35 && switch1==0 && x3==1 ) {  
+  tft.setCursor(120, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print("         ");}
+
+//=========================================================================================================================================== 
+
+
+
+if (tmr7.tick()) { //Serial.println("читаем датчики......... ");
+//----------------------------- УПРАВЛЕНИЕ вентиль БАТАРЕЕ ----------------------------------------------------------------------------
+ //ledcWriteChannel(1, 100); // шим вентиль ledcWriteTone(1, 10); ledcWrite(1,255);  
+//====================================================== CO CO2 T H P ===================================================================================== 
+   MQ7.update();  co = MQ7.readSensor(); if(co < 10000) {  co =co; } else co = 9999;//esp_task_wdt_reset();
+   MQ135.update(); co2=MQ135.readSensor(); if(co2 < 10000) { co2 = co2; } else co2 = 9999;
+
+  // MQ135.setA(605.18); MQ135.setB(-3.937);  co = MQ135.readSensor(); if(co < 10000) {  co =co; } else co = 9999;
+  //  MQ135.setA(110.47); MQ135.setB(-2.862); int co2=400+MQ135.readSensor(); if(co2 < 10000) { co2 = co2; } else co2 = 9999;                                                                          
+  //   MQ135.setA(77.255); MQ135.setB(-3.18);  float Alcohol = MQ135.readSensor(); 
+  //    MQ135.setA(44.947); MQ135.setB(-3.445); float Toluen = MQ135.readSensor(); 
+  //     MQ135.setA(102.2 ); MQ135.setB(-2.473); float NH4 = MQ135.readSensor(); 
+  //      MQ135.setA(34.668); MQ135.setB(-3.369); float Aceton = MQ135.readSensor(); 
+ // Serial.println("прочитали датчики......... ");
+//esp_task_wdt_reset();
+
+ }
+ 
+  //==================================ДИСПЛЕЙ и измерения ========================================================================================================= 
+   if (tmr12.tick()) {  //esp_task_wdt_reset(); //Serial.println("читаем батарею......... ");
+   tb = sensor1.getTempC();regulator1.input = t; regulator1.setpoint = edit1;
+   
+    // esp_task_wdt_reset();
+
+if(tb>(edit1+3)) { // esp_task_wdt_reset(); 
+//Serial.println("управляем вентилятором......... ");
+ledcWrite(25,regulator1.getResultTimer()); vent=1;} 
+  else {ledcWrite(25,0);vent=0;}
+    ekr1=1;
+     }
+
+  if (tmr14.tick()) {   t =  bme.readTemperature() - 3.5; // погрешность
+ //Serial.println("читаем температуру комнаты......... ");
+   }
+  if (tmr15.tick())  { h = bme.readHumidity();}  
+  if (tmr16.tick())  {  p = pressureToMmHg(bme.readPressure());}
+
+
+  //=//===========================================================================================================================================
+ if(switch1==1 && otaStarted==0) {   //esp_task_wdt_reset();
+//Serial.println("обработк вкл......... ");
+   tft.drawCircle(130, 165, 5, TFT_RED);tft.fillCircle(130, 165, 4, TFT_ORANGE);
+
+ if(x1==0){ x1=1; x2=0; timer = millis();tone(tonePin, 1000, 100);}
+
+  sec = (millis() - timer) / 1000ul; seconds = (sec % 3600ul) % 60ul; minutes = (sec % 3600ul) / 60ul; hours = (sec / 3600ul);
+  sprintf (buffer, "%02d:%02d:%02d", hours, minutes,seconds ); fen_time = buffer;
+  //Serial.println("обработк буфера прошла......... ");
+ //esp_task_wdt_reset();
+   if( hours == 10 && switch1==1) {digitalWrite(27, LOW); switch1=0; n=0; tone(tonePin, 500, 3000); Serial.println("таймер......... "); }
+    //Serial.print("regulator.getResultTimer() = ");Serial.println(regulator.getResultTimer());
+//Serial.println("проверка таймера прошла......... ");
+//  bool ResultTimer= regulator.getResultTimer();
+// Serial.println("Индик прошел...");
+//    if(ResultTimer==1 && flag==0) {Serial.println("Нагр..."); str=" Нагр.!"; ekr= 0xF800; x=1; digitalWrite(33, LOW);tmr3.start();flag=1;n=0;tone(tonePin, 1000, 100);}
+//    if(ResultTimer==0 && flag==1) {Serial.println("Охл..."); str=" Охл. !"; ekr= 0x001F;x=0; digitalWrite(27, LOW); tmr3.start();flag=0;n=0;tone(tonePin, 2000, 100); }
+// Serial.println("стираем...");
+
+     if (tmr5.tick()) { tft.setCursor(145, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, ekr); tft.print(str);tmr6.start(); } 
+  //Serial.println("tmr5 прошла......... ");
+     if (tmr6.tick()) { tft.setCursor(145, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print("       "); }
+    //  Serial.println("tmr6 прошла......... ");
+      // else if(switch1==0){   }
+      // Serial.println("прошли else if..."); 
+//=========================================================================================================================================== 
+} else 
+{ //Serial.println("если выкл кнопку......... ");
+ tft.drawCircle(130, 165, 5, TFT_BLACK);tft.fillCircle(130, 165, 5, TFT_BLACK); 
+if(x2==0){   x2=1; x1 = 0; tmr3.start();tone(tonePin, 2000, 100); digitalWrite(27, LOW);
+tft.setCursor(145, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print("       "); }
+sprintf (buffer, "%02d:%02d:%02d", 0, 0, 0 ); fen_time = buffer;
+//Serial.println(" выкл кнопку......... ");
+}
+
+//===================================== Кнопка ==============================================================================================
+//Serial.println(" опрос кнопки......... ");
+if (butt1.isClick()) { tone(tonePin, 2000, 100); switch1=1; switch12=333; }
+
+if (butt1.isHolded()) {switch1=0; flag=0; switch12=0;
+tft.setCursor(145, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print("       ");}
+//Serial.println(" прошли опрос кнопку......... ");
+//=========================================================================================================================================== 
+//Serial.println(" обн......... ");
+ // if(tmr13.tick()) obnovl();   // обновление
+  //Serial.println("экран......... ");
+  ekran();
+ //if(n < 5) dublclic(); //Serial.println(digitalRead(32));
+if (tmr3.tick()) {digitalWrite(33, HIGH); digitalWrite(27, HIGH); tmr4.start(); n=1; Serial.println("tmr3 ...");}
+//Serial.println("вклвыкл......... ");
+ onoff();
+ //if(tmw==1) {Serial.print("timercikl = "); Serial.println( (millis()-timercikl)/1000); tmw=0; delay(3000);}
+//esp_task_wdt_reset();  
+   if (tmr11.tick()) { // Serial.println("проверка вайфай......... ");
+  if (WiFi.status() != WL_CONNECTED) { 
+     WiFi.disconnect();   EEPROM.get(0, portalCfg.SSID); EEPROM.get(150, portalCfg.pass); WiFi.mode(WIFI_STA); WiFi.begin(portalCfg.SSID, portalCfg.pass); 
+     }}
+if (WiFi.status() == 3)  { tft.drawCircle(30, 100, 8, TFT_BLUE );tft.fillCircle(30, 100, 7, TFT_GREENYELLOW);  }
+   else {  tft.drawCircle(30, 100, 8, TFT_BLUE );tft.fillCircle(30, 100, 7, TFT_BLACK);}
+ //Serial.println("рисуем кружек......... ");
+ //if (tmr2.tick()) {EEPROM.put(100,edit1); EEPROM.put(110,switch1); EEPROM.commit(); }
+ if(tmr13.tick()) obnovl();   // обновление   
+   
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+ }}
+
+
+
+
 //==============================================================================================================================
 void setup() { 
   Serial.begin(115200); EEPROM.begin(500);
+
+  
+//=========================================================================================
+  wifisel();
+fota.setManifestURL(MANIFEST_URL);
+ fota.setDebug(true);
+// 🔥 ВОТ КЛЮЧЕВОЕ
+  fota.setProgressCallback([](uint8_t p) {
+    Serial.printf("OTA progress: %d%%\n", p);
+    tft.setCursor(100, 250);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print(p); tft.print("%"); // esp_task_wdt_reset();
+  // oled.setCursor(55, 2);oled.print(p);oled.print("%");oled.update();
+  //  if(p == 0)   str1 = "Download Udate.    ";
+  //     if(p<100) stroka = " "+ str1 + p +"  %";
+  //    if (p == 100) stroka = " Installing !!! ";   
+  
+ 
+  //  publishMessage(stroka_topic,stroka.c_str(),true);
+  });
   //==============================================================================================================================
   attachInterrupt(32, myIsr, CHANGE);// внешнее прерывание
   pinMode(14, OUTPUT); // пищалка  
   pinMode(34, INPUT);  // напряжение вход СО2
   pinMode(35, INPUT);  // напряжение вход СО
   pinMode(33, OUTPUT);  // ON
-  //pinMode(25, OUTPUT);   //  шим вентиль
-  ledcAttachPin(25, 1); ledcSetup(1, 400, 8);
-  
+  pinMode(25, OUTPUT);   //  шим вентиль
+ // ledcAttachPin(25, 1); ledcSetup(1, 400, 8);
+  ledcAttach(25, 6000, 8);
   pinMode(27, OUTPUT);   // OFF
   pinMode(32, INPUT_PULLUP);  //  кнопка
   //pinMode(3, OUTPUT);  // 
   digitalWrite(33, HIGH);digitalWrite(27, HIGH); //digitalWrite(PWMPin, HIGH); //Serial.print("PWMPin = 0 "); delay(3000);
 
-  edit1 = EEPROM.read(100); switch1= EEPROM.read(110);
+  edit1 = EEPROM.read(100); switch1= EEPROM.read(110); tx=EEPROM.read(400);
 //==================================================================================================================
      bme.setFilter(FILTER_COEF_8);                     // Настраиваем коофициент фильтрации
      bme.setTempOversampling(OVERSAMPLING_8);          // Настраиваем передискретизацию для датчика температуры
@@ -186,14 +423,13 @@ void setup() {
 
    //dht.begin();
 //==============================================================================================================================
-  tft.init();tft.setRotation(0);tft.fillScreen(TFT_BLACK);
-  //TFT_SET_BL(50);
-  tft.setTextColor(TFT_YELLOW,TFT_BLUE );tft.setTextSize(4);
-  tft.setCursor(40, 100);tft.print("<Смарт>");tft.setCursor(50, 140);tft.print("<ФЕН!>"); tft.setCursor(75, 180);tft.print(ota.version()); tft.setTextColor(TFT_YELLOW,TFT_BLACK );
+tft.init(); tft.setRotation(0);tft.fillScreen(TFT_BLACK);
+ tft.setTextColor(TFT_YELLOW,TFT_BLUE );tft.setTextSize(4);
+  tft.setCursor(40, 100);tft.print("<Смарт>");tft.setCursor(50, 140);tft.print("<ФЕН!>"); tft.setCursor(75, 180);tft.print(fota.getVER()); tft.setTextColor(TFT_YELLOW,TFT_BLACK );
   tft.setCursor(0,200);tft.setTextSize(1);delay(3000);
 //=======================================WIFI=======================================================================================
 
-wifisel();
+
    
 //========================================================================================
   tone(tonePin, 783, 165.441);delay(183.823333333);tone(tonePin, 659, 165.441);delay(183.823333333);tone(tonePin, 880, 165.441);delay(3000);
@@ -223,104 +459,73 @@ wifisel();
    timeClient.setUpdateInterval(SECS_IN_HR);
 //================== Регулятор охлаждения ==========================================================================================
    regulator1.setDirection(NORMAL); // направление регулирования (NORMAL/REVERSE). ПО УМОЛЧАНИЮ СТОИТ NORMAL
-   regulator1.setLimits(305, 1024);    // пределы (ставим для 8 битного ШИМ). ПО УМОЛЧАНИЮ СТОЯТ 0 И 255
+   regulator1.setLimits(0, 1024);    // пределы (ставим для 8 битного ШИМ). ПО УМОЛЧАНИЮ СТОЯТ 0 И 255
    //regulator1.setpoint = 33;        // сообщаем регулятору температуру радиатора
   
   //regulator1.k = 0.5;          // коэффициент обратной связи (подбирается по факту)
-  //regulator1.dT = 500;       // установить время итерации для getResultTimer
+  regulator1.setDt(2000);      // установить время итерации для getResultTimer
 //============================================================================================================================================
 //=========================================================================================================================================   
-   //regulator.setpoint = edit1;    // установка (ставим на 40 градусов)
-   regulator.hysteresis = 3;   // ширина гистерезиса
-   regulator.k = 0.5;          // коэффициент обратной связи (подбирается по факту)
-  //regulator.dT = 500;       // установить время итерации для getResultTimer
+ digitalWrite(27, LOW); delay(500); digitalWrite(27, HIGH);
   //===========================================================================================================================
-   tmr8.start(); 
+   tmr8.start();  tmr18.start();  
    //=========================================================================================================================================
+xTaskCreatePinnedToCore(Task0Code,"Task0",10000,NULL,1,&TaskOnCore0,0 );
+xTaskCreatePinnedToCore(Task1Code,"Task1",10000,NULL,1,&TaskOnCore1,1 );
+/////////////// Настройка конфигурации watchdog////////////////////////
+//     esp_task_wdt_config_t wdt_config = {
+//     .timeout_ms = WDT_TIMEOUT * 1000, // конвертируем секунды в миллисекунды
+//     .idle_core_mask = (1 << 1),                                                       //idle_core_mask = 0, // Следим за всеми ядрами (битовая маска) .idle_core_mask = (1 << 1), // Только ядро 0  
+//     .trigger_panic = true, // Заменить на true для перезагрузки при срабатывании
+// };
 
-
+//     esp_task_wdt_init(&wdt_config);
+//     esp_task_wdt_add(NULL);
+  
 }
 
 
 
 //================================================
-void loop() {   client.loop(); timeClient.update();
+void loop() { 
 
-   float t =  bme.readTemperature();   float h = bme.readHumidity();   p = pressureToMmHg(bme.readPressure());
-    regulator.input = t;  regulator1.input = t;
-    regulator.setpoint = edit1;  regulator1.setpoint = edit1;
-
-    if(tb>(edit1+3)) {
-  ledcWriteTone(1, 6000); ledcWrite(1,regulator1.getResultTimer()); 
- // digitalWrite(25,HIGH);
-  vent=1; } 
-  else {
-     ledcWrite(1,0);
-    //digitalWrite(25,LOW); 
-  vent=0;}
-
- if (tmr11.tick()) { if (WiFi.status() != WL_CONNECTED) {wifisel(); }}
- //Serial.print("edit1 =  "); Serial.println(edit1); delay(3000);
- //Serial.print("switch1 =  "); Serial.println(switch1); delay(3000);
- //Serial.print("incommingMessage = =  "); Serial.println(incommingMessage); delay(3000);
- //Serial.print("analogread 34 =  "); Serial.println(analogRead(34));
- //Serial.print("analogread 35 =  "); Serial.println(analogRead(35));
-  //click(); 
-  if (WiFi.status() == 3)  { tft.drawCircle(30, 100, 8, TFT_BLUE );tft.fillCircle(30, 100, 7, TFT_GREENYELLOW); }
-   else {tft.drawCircle(30, 100, 8, TFT_BLUE );tft.fillCircle(30, 100, 7, TFT_BLACK);}
  
- //if (tmr2.tick()) {EEPROM.put(100,edit1); EEPROM.put(110,switch1); EEPROM.commit(); }
- 
- //=========================================================================================================================================== 
- if (tmr8.tick()) { x3=1;tft.setCursor(120, 170);tft.setTextSize(2);tft.setTextColor(TFT_NAVY, TFT_BLACK); tft.print("         ");
-   
-    }
+}
 
- if(x3==0) { tft.setCursor(120, 170);tft.setTextSize(2);tft.setTextColor(TFT_NAVY, TFT_GREEN); tft.print(" Init СО "); co=0;co2=0; }
- if(co > 35 && x3==1) { switch1 = 0;
-     if (tmr5.tick()) { tft.setCursor(120, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_RED);   tft.print("Угар.газ!");tone(tonePin, 1000, 500);tmr6.start();} 
-     if (tmr6.tick()) { tft.setCursor(120, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print("         ");}
-    } 
-  if(co < 35 && switch1==0 && x3==1 ) {  
-  tft.setCursor(120, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print("         ");}
 
-//===========================================================================================================================================   
-if (tmr1.tick()) {
 
- publishMessage(vent_topic,String(vent),true); 
- publishMessage(tb_topic,String(tb),true); 
- publishMessage(t_topic,String(t),true);    
- publishMessage(h_topic,String(h),true);
- publishMessage(co2_topic,String(co2),true);
- publishMessage(co_topic,String(co),true);
- publishMessage(p_topic,String(p),true);
- publishMessage(tust_topic,String(edit1),true);
- publishMessage(time_topic,fen_time.c_str(),true); 
- publishMessage(switch11_topic,String(switch12),true);
- publishMessage(edit11_topic,String(edit1),true);
+ //====================================================================================================co = analogRead(35);=======================================
+// void dublclic(){ esp_task_wdt_reset(); 
+// if(tmr3.active()) return;
 
-} 
+//   if (flag==1) { if(tmr4.tick()){ digitalWrite(33, LOW); tmr3.start(); n=n+1; esp_task_wdt_reset(); yield(); } }
+//   if (flag==0 or switch1==0) { if(tmr4.tick()){ digitalWrite(27, LOW); tmr3.start(); n=n+1;esp_task_wdt_reset(); yield(); } } 
+// }
+//==============================================================================================================================
+void onoff(){
+  if(!switch1) return;
+ //Serial.println("вошли  в выкл......... ");
+   if( t < edit1-dT && flag==0) {dT=0.7;Serial.println("Нагр..."); str=" Нагр.!"; ekr= 0xF800; x=1; digitalWrite(33, LOW);tmr3.start();flag=1;n=0;tone(tonePin, 1000, 100);}
+      else if( t > edit1+dT && flag==1) {dT=1.5;Serial.println("Охл..."); str=" Охл. !"; ekr= 0x001F;x=0; digitalWrite(27, LOW); tmr3.start();flag=0;tone(tonePin, 2000, 100); }
+//Serial.println("прошли условия темп......... ");
+if(flag==1 && n==1) {if(tmr4.tick()){ digitalWrite(33, LOW);tmr3.start();Serial.println("Дубль на нагрев..."); }}
+if(flag==0 && n==1) {if(tmr4.tick()){ digitalWrite(27, LOW);tmr3.start();Serial.println("Дубль на охл..."); }}
+//Serial.println("прошли условия дубль......... ");
+if(tmr17.tick()){
+ Serial.print("flag---"); Serial.println(flag); 
+ Serial.print("dT---"); Serial.println(dT); 
+ Serial.print("n---"); Serial.println(n);
 
-if (tmr7.tick()) {
-//----------------------------- УПРАВЛЕНИЕ вентиль БАТАРЕЕ ----------------------------------------------------------------------------
- //ledcWriteChannel(1, 100); // шим вентиль ledcWriteTone(1, 10); ledcWrite(1,255); 
- 
- tb = sensor1.getTempC(); 
-//====================================================== CO CO2 T H P ===================================================================================== 
-   MQ7.update();  co = MQ7.readSensor(); if(co < 10000) {  co =co; } else co = 9999;
-   MQ135.update(); co2=MQ135.readSensor(); if(co2 < 10000) { co2 = co2; } else co2 = 9999;
+}
+//Serial.println("выходим оноф......... ");
+}
+//==============================================================================================================================
+void ekran(){
+  if(!ekr1) return;
+if(otaStarted) return;
 
-  // MQ135.setA(605.18); MQ135.setB(-3.937); int co = MQ135.readSensor(); if(co < 10000) {  co =co; } else co = 9999;
-  //  MQ135.setA(110.47); MQ135.setB(-2.862); int co2=400+MQ135.readSensor(); if(co2 < 10000) { co2 = co2; } else co2 = 9999;                                                                          
-  //   MQ135.setA(77.255); MQ135.setB(-3.18);  float Alcohol = MQ135.readSensor(); 
-  //    MQ135.setA(44.947); MQ135.setB(-3.445); float Toluen = MQ135.readSensor(); 
-  //     MQ135.setA(102.2 ); MQ135.setB(-2.473); float NH4 = MQ135.readSensor(); 
-  //      MQ135.setA(34.668); MQ135.setB(-3.369); float Aceton = MQ135.readSensor(); 
-
- }
- 
-  //==================================ДИСПЛЕЙ========================================================================================================= 
-   tft.drawRoundRect(1, 1, 238, 70, 20, TFT_RED); tft.setCursor(100, 6);tft.setTextSize(2);tft.setTextColor(TFT_PURPLE, TFT_BLACK);tft.print("Дата.");
+ //esp_task_wdt_reset();
+tft.drawRoundRect(1, 1, 238, 70, 20, TFT_RED); tft.setCursor(100, 6);tft.setTextSize(2);tft.setTextColor(TFT_PURPLE, TFT_BLACK);tft.print("Дата.");
    tft.setCursor(5, 30);tft.setTextSize(3);tft.setTextColor(TFT_YELLOW, TFT_BLACK);
    tft.print(String(" ") + timeClient.getDay() + " " + timeClient.getMonthStr() + " " + timeClient.getYear()); 
      tft.drawRoundRect(1, 75, 238, 70, 20, TFT_RED);tft.setCursor(100, 81);tft.setTextSize(2);tft.setTextColor(TFT_PURPLE, TFT_BLACK);tft.print("Время.");
@@ -328,6 +533,7 @@ if (tmr7.tick()) {
      tft.print(timeClient.getFormattedTime()); 
       tft.drawRoundRect(1, 152, 238, 50, 20, TFT_CYAN);
         tft.setCursor(17, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print("Туст. ");tft.print(edit1);
+  //esp_task_wdt_reset();
 if(tmr9.tick()) {tmr10.start(); 
         tft.drawRoundRect(1, 207, 238, 113, 20, TFT_GREENYELLOW);
         tft.setCursor(15, 220);tft.setTextSize(3);tft.setTextColor(TFT_MAGENTA, TFT_BLACK); tft.print("Тбат. ");tft.setCursor(125, 220);tft.print("     ");tft.setCursor(125, 220);tft.print(tb);//tft.setCursor(125, 220);tft.print("     ");
@@ -346,94 +552,66 @@ if(tmr10.tick()) {
         tft.setCursor(15, 280);tft.setTextSize(3);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print("CO2ppm ");tft.setCursor(135, 280);tft.print("     ");tft.setCursor(135, 280);tft.print(co2); //tft.setCursor(135, 280);tft.print("     ");
         //tft.setCursor(15, 280);tft.setTextSize(3);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print(String("")+"CO2ppm"+" "+co2+" ");
            }
-  //=========================================================================================================================================== 
- 
 
- 
- //===========================================================================================================================================
- if(switch1==1) {  tft.drawCircle(130, 165, 5, TFT_RED);tft.fillCircle(130, 165, 4, TFT_ORANGE);
 
- if(x1==0){ x1=1; x2=0; timer = millis();tone(tonePin, 1000, 100);}
-
-  sec = (millis() - timer) / 1000ul; seconds = (sec % 3600ul) % 60ul; minutes = (sec % 3600ul) / 60ul; hours = (sec / 3600ul);
-  sprintf (buffer, "%02d:%02d:%02d", hours, minutes,seconds ); fen_time = buffer;
-
-   if( hours == 10 && switch1==1) {digitalWrite(27, LOW);delay(1000);  switch1=0; tone(tonePin, 500, 3000); }
-    //Serial.print("regulator.getResultTimer() = ");Serial.println(regulator.getResultTimer());
-
-   if(regulator.getResultTimer()==1 && flag==0) { str=" Нагр.!"; ekr= 0xF800; x=1; digitalWrite(33, LOW);tmr3.start();flag=1;tone(tonePin, 1000, 100);}
-   if(regulator.getResultTimer()==0 && flag==1) { str=" Охл. !"; ekr= 0x001F;x=0;digitalWrite(27, LOW);tmr3.start();flag=0;tone(tonePin, 2000, 100); }
-
-     if (tmr5.tick()) { tft.setCursor(145, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, ekr); tft.print(str);tmr6.start(); } 
-     if (tmr6.tick()) { tft.setCursor(145, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print("       ");}
-      else if(switch1==0){   }
-//=========================================================================================================================================== 
-} 
-else { tft.drawCircle(130, 165, 5, TFT_BLACK);tft.fillCircle(130, 165, 5, TFT_BLACK); 
-if(x2==0){x2=1; x1 = 0; tmr3.start();tone(tonePin, 2000, 100);digitalWrite(27, LOW);
-tft.setCursor(145, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print("       "); }
-sprintf (buffer, "%02d:%02d:%02d", 0, 0, 0 ); fen_time = buffer;
+ekr1=0; //esp_task_wdt_reset(); 
 }
-//===================================== Кнопка ==============================================================================================
-if (butt1.isClick()) {tone(tonePin, 2000, 100); switch1=1; switch12=333; }
-
-if (butt1.isHolded()) {switch1=0; flag=0; switch12=0;
-tft.setCursor(145, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print("       ");}
-//=========================================================================================================================================== 
-
-if (tmr3.tick()) {digitalWrite(33, HIGH); digitalWrite(27, HIGH);}
-
- dublclic();//Serial.println(digitalRead(32));
- if (!client.connected()) reconnect();
-//=========================================================================================================================================== 
- if (tmr12.tick()) esp_restart();   
-  if(tmr13.tick()) obnovl();  // обновление
-}
-
-
-
-  
-
-
 //==============================================================================================================================
-
-//==============================================================================================================================
- void callback(char* topic, byte* payload, unsigned int length) { String incommingMessage = "";
+ void callback(char* topic, byte* payload, unsigned int length) {   String incommingMessage = ""; bool swit;
       for (int i = 0; i < length; i++) incommingMessage+=(char)payload[i]; Serial.println("Message arrived ["+String(topic)+"]"+incommingMessage);
     
-     if( strcmp(topic,switch1_topic) == 0){ if (incommingMessage.equals("333")) {switch1=1;switch12=333; } 
-        else { if (incommingMessage.equals("0")){switch1=0;switch12=0; }} EEPROM.put(110,switch1); EEPROM.commit(); }  //  включаем нагрев
-        
-     //if( strcmp(topic,switch1_topic) == 0){ switch1=incommingMessage.toInt();incommingMessage = "";  }
-     if (strcmp(topic,edit1_topic) == 0) {edit1 = incommingMessage.toInt(); EEPROM.put(100,edit1);EEPROM.commit();incommingMessage = "";}
+     if( strcmp(topic,switch1_topic) == 0){ if (incommingMessage.equals("333")) {swit = 1; switch12=333; } 
+        else { if (incommingMessage.equals("0")){ if(switch1==1)  dT=0; swit = 0;  switch12=0; }}  if(swit!=switch1) { switch1=swit; EEPROM.put(110,switch1); EEPROM.commit();}  }  //  включаем нагрев
+      //esp_task_wdt_reset();   
+     int editVREM;
+     if (strcmp(topic,edit1_topic) == 0) {editVREM = incommingMessage.toInt(); if(editVREM!=edit1) {edit1=editVREM; EEPROM.put(100,edit1);EEPROM.commit();incommingMessage = "";}}
 
   //Serial.print("switch1 =  "); Serial.println(switch1);
   //Serial.print("edit1 =  "); Serial.println(edit1);
+  
   }
 
 //==============================================================================================================================
- void obnovl() { String ver, notes;
-if (ota.checkUpdate(&ver, &notes)) { tone(tonePin, 2000, 1000);
-tft.fillScreen(TFT_BLACK);
-  tft.drawRoundRect(1, 152, 238, 50, 20, TFT_CYAN);
+ void obnovl() {  //Serial.println(" вошли в обн......... ");
+ //esp_task_wdt_delete(NULL); // ⛔ отключаем WDT ДО OTA 
+ // Serial.println(" отключили воч дог......... ");
+ if (fota.getchekupdate()){ tone(tonePin, 2000, 1000); 
+ otaStarted = 1;
+ String ver, notes;
+ fota.getupdate(ver, notes); 
+    Serial.println("=== UPDATE AVAILABLE ===");
+    Serial.print("New version : "); Serial.println(ver);
+    Serial.print("Notes       : "); Serial.println(notes);
+ tft.fillScreen(TFT_BLACK);
+   tft.drawRoundRect(1, 152, 238, 50, 20, TFT_CYAN);
         tft.setCursor(15, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print("Update Ver. ");tft.print(ver);
   tft.drawRoundRect(1, 207, 238, 113, 20, TFT_MAGENTA);
         tft.setCursor(3, 220);tft.setTextSize(2);tft.setTextColor(TFT_YELLOW, TFT_BLACK); tft.println(" Notes:  ");tft.print(notes);
-delay(5000); tft.fillScreen(TFT_BLACK);
-tft.drawRoundRect(1, 152, 238, 50, 20, TFT_CYAN);
-        tft.setCursor(17, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print("Update Begin !!!");tone(tonePin, 800, 3000);ota.updateNow();
-
-  
-}}
+ delay(3000); tft.fillScreen(TFT_BLACK);
+ tft.drawRoundRect(1, 152, 238, 50, 20, TFT_CYAN);
+         tft.setCursor(15, 170);tft.setTextSize(2);tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.print("Update Begin !!!");tone(tonePin, 800, 3000);
+         fota.updateNOW(true);
+          }
+ // esp_task_wdt_add(NULL);
+ //Serial.println(" обн нет......... ");
+  // }   
+// //----------------------------------------------------------------------------------------------------
+}
 //==============================================================================================================================
 void publishMessage(const char* topic, String payload , boolean retained){
-  if (client.publish(topic, payload.c_str(), true))
+  if (client.publish(topic, payload.c_str(), retained))
       Serial.println("Message publised ["+String(topic)+"]: "+payload);
 }
 //==============================================================================================================================
-void reconnect() { if (WiFi.status() == 3) { while (!client.connected()) {Serial.print("Attempting MQTT connection...");String clientId = "ESP32Client-";
- clientId += String(random(0xffff), HEX);
-
+void reconnect() { 
+ 
+  static uint32_t lastTry = 0;
+  if (millis() - lastTry < 5000) return;
+  lastTry = millis();
+  
+  //if (WiFi.status() == 3) { while (!client.connected()) {Serial.print("Attempting MQTT connection...");String clientId = "ESP32Client-";
+ //clientId += String(random(0xffff), HEX);
+String clientId = "ESP32Client-";
     if (client.connect(clientId.c_str(), mqtt_username, mqtt_password)) {Serial.println("connected"); tft.drawCircle(30, 123, 8, TFT_RED);tft.fillCircle(30, 123, 7, TFT_BLUE);
     client.subscribe(switch1_topic); 
     client.subscribe(edit1_topic);
@@ -444,15 +622,13 @@ void reconnect() { if (WiFi.status() == 3) { while (!client.connected()) {Serial
       tft.drawCircle(30, 123, 8, TFT_RED); //tft.fillCircle(30, 123, 7, TFT_BLACK);
     //client.subscribe(switch1_topic);    delay(5000);
       } 
-  }
-}
+ // }
+//  } 
+
 }
 //==============================================================================================================================
-//====================================================================================================co = analogRead(35);=======================================
-void dublclic(){ 
-  if (flag==1) { if(tmr4.tick()){digitalWrite(33, LOW);tmr3.start();  } }
-  if (flag==0 or switch1==0) { if(tmr4.tick()){digitalWrite(27, LOW);tmr3.start(); } }
-  }
+
+ 
 //===========================================================================================================================================
  void initco2() { 
    float calcR0 = 0;
@@ -461,11 +637,11 @@ void dublclic(){
    MQ135.setR0(calcR0/10);
      if(isinf(calcR0)) { tft.setCursor(15, 10);tft.setTextSize(2);tft.setTextColor(TFT_GREENYELLOW, TFT_BLACK); 
      tft.print("Warning MQ135: Conection issue, R0 is infinite (Open circuit detected) please check your wiring and supply");
-     Serial.println("Warning MQ135: Conection issue, R0 is infinite (Open circuit detected) please check your wiring and supply"); while(1);
+     Serial.println("Warning MQ135: Conection issue, R0 is infinite (Open circuit detected) please check your wiring and supply"); return;
      }
    if(calcR0 == 0){ tft.setCursor(15, 10);tft.setTextSize(2);tft.setTextColor(TFT_GREENYELLOW, TFT_BLACK); 
     tft.print("Warning MQ135: Conection issue found, R0 is zero (Analog pin shorts to ground) please check your wiring and supply");
-    Serial.println("Warning MQ135: Conection issue found, R0 is zero (Analog pin shorts to ground) please check your wiring and supply"); while(1);
+    Serial.println("Warning MQ135: Conection issue found, R0 is zero (Analog pin shorts to ground) please check your wiring and supply"); return;
    }
   calcR0 = 0;
   for(int i = 1; i<=10; i ++)
@@ -475,18 +651,20 @@ void dublclic(){
   
    if(isinf(calcR0)) { tft.setCursor(15, 200);tft.setTextSize(2);tft.setTextColor(TFT_ORANGE, TFT_BLACK); 
     tft.print("Warning MQ7: Проблема с подключением, R0 бесконечен (обнаружен обрыв цепи) пожалуйста, проверьте вашу проводку и источник питания");
-    Serial.println("Warning MQ7: Проблема с подключением, R0 бесконечен (обнаружен обрыв цепи) пожалуйста, проверьте вашу проводку и источник питания"); while(1);
+    Serial.println("Warning MQ7: Проблема с подключением, R0 бесконечен (обнаружен обрыв цепи) пожалуйста, проверьте вашу проводку и источник питания"); return;
    }
    if(calcR0 == 0){  tft.setCursor(15, 200);tft.setTextSize(2);tft.setTextColor(TFT_ORANGE, TFT_BLACK); 
     tft.print("Warning MQ7: Обнаружена проблема с подключением, R0 равен нулю (аналоговый вывод замыкается на землю) пожалуйста, проверьте проводку и источник питания");
-    Serial.println("Warning MQ7: Обнаружена проблема с подключением, R0 равен нулю (аналоговый вывод замыкается на землю) пожалуйста, проверьте проводку и источник питания");while(1);
+    Serial.println("Warning MQ7: Обнаружена проблема с подключением, R0 равен нулю (аналоговый вывод замыкается на землю) пожалуйста, проверьте проводку и источник питания");return;
   }
 
    MQ7.serialDebug(true);
+ 
 }
 //==============================================================================================================================
-void wifisel(){
+void wifisel(){ 
 label0:
+ 
  if(digitalRead(32)==0) { portal=1;}
  //if(digitalRead(13)==0) { portal=1;}
   else { if(portal==0){
@@ -517,9 +695,5 @@ if (portal==1) {portalRun(180000);
 }
 
 //==============================================================================================================================
-//======================= ВНЕШНЕЕ ПРЕРЫВАНИЕ апаратное по 32 ноге ================================================
-IRAM_ATTR void myIsr() {
-  butt1.tick();
 
-}
 
