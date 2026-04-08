@@ -132,7 +132,7 @@ volatile float co = 0;             // читается в Task1
 volatile float co2 = 0;            // читается в Task1
 volatile float t = 0;              // читается в Task1
 volatile float h = 0;              // читается в Task1
-volatile float p = 0;              // читается в Task1
+volatile int   p = 0;              // читается в Task1
 volatile float tb = 0;             // читается в Task1
 
 // Таймеры и флаги
