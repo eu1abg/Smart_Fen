@@ -1,7 +1,7 @@
 #include <ArduinoJson.h>
 #include <AvtoFotaNew.h>
 const char* MANIFEST_URL = "https://raw.githubusercontent.com/eu1abg/Smart_Fen/main/firmware/firmware.json";
-AvtoFotaNew fota("5.00");
+AvtoFotaNew fota("5.01");
 //bool otaStarted = false;
  #include <WiFi.h>
 //=========================================================================================
