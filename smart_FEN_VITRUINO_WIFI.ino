@@ -132,7 +132,7 @@ volatile float co = 0;             // читается в Task1
 volatile float co2 = 0;            // читается в Task1
 volatile float t = 0;              // читается в Task1
 volatile float h = 0;              // читается в Task1
-volatile int   p = 0;              // читается в Task1
+volatile int p = 0;              // читается в Task1
 volatile float tb = 0;             // читается в Task1
 
 // Таймеры и флаги
@@ -216,13 +216,17 @@ TaskHandle_t TaskOnCore0;
 TaskHandle_t TaskOnCore1;
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // --- Задача для первого ядра (Core 0) ---
-void Task0Code(void *pvParameters) {for (;;) { 
-client.loop(); timeClient.update();
-if (!client.connected()) reconnect();
-
-
-if (tmr1.tick() && otaStarted==0) {
-
+void Task0Code(void *pvParameters) {
+  static unsigned long lastNTPcall = 0;
+  static unsigned long lastMQTTCheck = 0;
+  for (;;) { 
+ client.loop(); 
+ // Обновляем NTP не чаще раза в секунд
+    if (millis() - lastNTPcall >= 60000)  {if (WiFi.status() == WL_CONNECTED)  {timeClient.update();lastNTPcall = millis(); }}
+    if (millis() - lastMQTTCheck >= 3000) {if (WiFi.status() == WL_CONNECTED)  {if (!client.connected()) reconnect();      }}
+   
+  if (tmr1.tick() && otaStarted==0 && client.connected()) {
+   
  publishMessage(vent_topic,String(vent),true); 
  publishMessage(tb_topic,String(tb),true); 
  publishMessage(t_topic,String(t),true);    
@@ -236,6 +240,7 @@ if (tmr1.tick() && otaStarted==0) {
  publishMessage(edit11_topic,String(edit1),true);
 
 } 
+ 
 
  vTaskDelay(100 / portTICK_PERIOD_MS); // Правильная задержка в RTOS
 
@@ -247,9 +252,9 @@ if (tmr1.tick() && otaStarted==0) {
 
 void Task1Code(void *pvParameters) {for (;;) {
 
-  if (otaStarted) {vTaskDelay(pdMS_TO_TICKS(100));  // отдыхаем, пока идет OTA
-      continue;  // пропускаем всю остальную логику
-    }
+  // if (otaStarted) {vTaskDelay(pdMS_TO_TICKS(100));  // отдыхаем, пока идет OTA
+  //     continue;  // пропускаем всю остальную логику
+  //   }
 //=========================================================================================================================================== 
 if (tmr8.tick()) { 
  // Serial.println("делаем прробел......... ");
